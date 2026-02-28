@@ -8,7 +8,7 @@ const salesSchema = new mongoose.Schema({
   date: {
     type: Date,
     required: true,
-    default: () => new Date(), // Dynamic timestamp
+    default: () => new Date(),
   },
   status: {
     type: String,
@@ -21,8 +21,16 @@ const salesSchema = new mongoose.Schema({
   user: {
     type: String,
     required: true,
-  }
+  },
+  stripeSessionId: {
+    type: String,
+    required: true,
+    unique: true,
+  },
 });
+
+// Enforce unique index at schema level — prevents duplicate sales on retry
+salesSchema.index({ stripeSessionId: 1 }, { unique: true });
 
 const Sale = mongoose.model('Sale', salesSchema);
 module.exports = Sale;

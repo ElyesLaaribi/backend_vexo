@@ -14,24 +14,22 @@ const xss = require('xss-clean')
 require("dotenv").config()
 const Media = require("./models/media.model.js");
 const Payout = require("./models/payout.model.js");
- 
 
 
- 
+
+
 const stripe_webhook = require('./webhooks/stripe/stripeWebhooks.js');
-const stripePayment = require('./webhooks/stripe/stripePayment.js');
 
 app.post('/stripe_webhook', express.raw({ type: 'application/json' }), stripe_webhook);
-app.post('/admez_payments_stripe', stripePayment);
- 
+
 
 
 app.use(cors({
   origin: [
     "https://www.admez.fun",
     "http://localhost:5173"
-  ],  
-  methods: ["GET", "POST" , "PATCH"],  
+  ],
+  methods: ["GET", "POST", "PATCH"],
 }));
 
 
@@ -39,7 +37,7 @@ app.use(cors({
 // app.use(async (req, res, next) => {
 //   try {
 
-   
+
 //         // const updateResult = await Payout.updateMany(
 //         //     { 
 //         //         user: "6849d86d2e2d7b34c96646ff",
@@ -57,12 +55,12 @@ app.use(cors({
 
 //         // next()
 
-        
+
 //         const result = await Media.updateMany(
 //             { }, // Filter for documents where dataType is "media"
 //             { $set: { expired: true } } // Set expired to true for all matching documents
 //           );
-    
+
 //     console.log(`Expired ALL ${result.modifiedCount} media items`);
 //     next();
 //   } catch (error) {
@@ -77,39 +75,39 @@ app.use((req, res, next) => {
   res.set('Cross-Origin-Resource-Policy', 'cross-origin'); // Most permissive
   // res.set('Cross-Origin-Resource-Policy', 'same-origin'); // More restrictive
   // res.set('Cross-Origin-Resource-Policy', 'same-site'); // Most restrictive
-  
+
   next();
 });
 
- 
 
 
 
 
 
- 
+
+
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000,  
-  max: 200, 
-  message : "We have received too many request from this IP. please try again later."
+  windowMs: 15 * 60 * 1000,
+  max: 200,
+  message: "We have received too many request from this IP. please try again later."
 });
 
 app.use(limiter);
 
- 
- 
+
+
 
 
 
 const didit_webhook = require('./webhooks/didit/diditWebhooks.js');
 app.post('/didit_webhook_admez', bodyParser.json({
-    verify: (req, res, buf, encoding) => {
-      if (buf && buf.length) {
-        // Store the raw body in the request object
-        req.rawBody = buf.toString(encoding || "utf8");
-      }
-    },
-  }), didit_webhook);
+  verify: (req, res, buf, encoding) => {
+    if (buf && buf.length) {
+      // Store the raw body in the request object
+      req.rawBody = buf.toString(encoding || "utf8");
+    }
+  },
+}), didit_webhook);
 
 
 
@@ -123,32 +121,32 @@ app.use(
 );
 
 app.use(xss())
- 
 
- 
+
+
 
 
 app.use('/tmp', express.static(path.join(__dirname, 'tmp')));
 
 const storage = multer.memoryStorage()
- 
+
 
 const upload = multer({ storage: storage });
 
 
-const { createMediaLink, createFileLink , getLinkPage } = require("./controllers/media.controller.js"); 
-const {readyMediaDataLink , readyFileDataLink } = require("./utils/linksUtils/getReadyForLink.js");
-const checkBan = require("./utils/isBanned/isBanned.js") 
+const { createMediaLink, createFileLink, getLinkPage } = require("./controllers/media.controller.js");
+const { readyMediaDataLink, readyFileDataLink } = require("./utils/linksUtils/getReadyForLink.js");
+const checkBan = require("./utils/isBanned/isBanned.js")
 const hasPhoneNumber = require("./utils/phone/hasPhoneNumber.js")
 const isVerifiedMiddleWare = require("./verification/diditVerif/isVerifiedKyc.js")
 const isKycDone = require('./controllers/checkKyc.controller.js')
 // USED ...
-app.post('/media/createLink', authorize  , checkBan   ,isVerifiedMiddleWare  ,hasPhoneNumber ,  readyMediaDataLink, upload.array("files"), createMediaLink);
-app.post('/file/createLink', authorize  , checkBan , isVerifiedMiddleWare ,hasPhoneNumber , readyFileDataLink, upload. array("files"), createFileLink);
+app.post('/media/createLink', authorize, checkBan, isVerifiedMiddleWare, hasPhoneNumber, readyMediaDataLink, upload.array("files"), createMediaLink);
+app.post('/file/createLink', authorize, checkBan, isVerifiedMiddleWare, hasPhoneNumber, readyFileDataLink, upload.array("files"), createFileLink);
 
-app.get('/isKycDone' ,authorize , isVerifiedMiddleWare , isKycDone )
+app.get('/isKycDone', authorize, isVerifiedMiddleWare, isKycDone)
 
-app.get('/media/v1/:id', getLinkPage); 
+app.get('/media/v1/:id', getLinkPage);
 
 
 const userRoute = require("./routes/user.route.js")
@@ -156,7 +154,7 @@ const StripeSetupRoute = require("./routes/stripeSetup.route.js")
 const paymentRoute = require("./routes/payment.route.js")
 const payoutRoute = require("./routes/payout.route.js")
 const mediaRoute = require("./routes/media.route.js")
-const bankRoute = require("./routes/bank.route.js") 
+const bankRoute = require("./routes/bank.route.js")
 const verif = require("./routes/verification.route.js")
 const fcm = require("./routes/fcm.route.js")
 const phone = require("./routes/phone.route.js")
@@ -169,14 +167,14 @@ app.use("/stripe-setup", StripeSetupRoute);
 app.use("/payment", paymentRoute);
 app.use("/payout", payoutRoute);
 app.use("/mediaData", mediaRoute);
-app.use("/bank", bankRoute); 
+app.use("/bank", bankRoute);
 app.use("/KYC", verif);
 
- 
+
 const isBankVerified = require("./utils/bankingUtils/bankStatusSettings.js")
-const isVerifiedSetting = require("./verification/diditVerif/isVerifiedKycSettings.js") 
+const isVerifiedSetting = require("./verification/diditVerif/isVerifiedKycSettings.js")
 const settings = require("./controllers/settings.controller.js")
-app.get("/settingsInfo" , authorize  , isBankVerified , hasPhoneNumber ,  isVerifiedSetting , settings)
+app.get("/settingsInfo", authorize, isBankVerified, hasPhoneNumber, isVerifiedSetting, settings)
 
 
 
@@ -219,9 +217,9 @@ app.get("/settingsInfo" , authorize  , isBankVerified , hasPhoneNumber ,  isVeri
 
 
 app.use(globalErrorHandle);
- 
 
- 
+
+
 
 // // Thumbnail route (always images - jpg/png)
 // app.get('/uploads/:userId/:folder/:filename', (req, res) => {
@@ -237,7 +235,7 @@ app.use(globalErrorHandle);
 //   // Thumbnails are always images - force image/jpeg
 //   res.type('.jpg'); // or .png depending on your thumbnails format
 //   res.set('Cross-Origin-Resource-Policy', 'cross-origin');
-  
+
 //   fs.createReadStream(thumbPath).pipe(res);
 //   }
 //   else {
@@ -248,21 +246,21 @@ app.use(globalErrorHandle);
 //   // Get file extension and set Content-Type automatically
 //   const ext = path.extname(filename);
 //   res.type(ext); // Express will automatically set the correct Content-Type
-  
+
 //   // Additional headers
 //   res.set('Cross-Origin-Resource-Policy', 'cross-origin');
-  
+
 //   // For downloads instead of display, use:
 //   // res.attachment(filename);
-  
+
 //   fs.createReadStream(mediaPath).pipe(res);
 
 //   }
 
 
 // });
- 
- 
+
+
 
 
 
