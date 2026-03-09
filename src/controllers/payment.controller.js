@@ -11,31 +11,31 @@ const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
 const createCheckoutSession = asyncHandler(async (req, res, next) => {
   try {
     const { uuid } = req.body;
+    if (!uuid) return next(new CustomError("uuid is required", 400));
 
-
-    const media = await Media.findOne({ uuid: uuid });
-    if (!media) {
-      return next(new CustomError("Media not found!", 404));
-    }
+    const media = await Media.findOne({ uuid });
+    if (!media) return next(new CustomError("Media not found!", 404));
+    if (media.expired) return next(new CustomError("This link has expired.", 410));
 
     const user = await User.findOne({ _id: media.user });
     if (!user || !user.stripeAccountId) {
-      return next(new CustomError("User or Stripe account not found!", 400));
+      return next(new CustomError("Creator Stripe account not found!", 400));
     }
 
-
-    const amount = media.priceSet * 100;
+    // Use the creator's actual currency (falls back to usd if unset)
+    const currency = (user.currency || "usd").toLowerCase();
+    const amount = Math.round(media.priceSet * 100);
     const feeAmount = Math.trunc((amount * 10) / 100);
+
+    const frontUrl = (process.env.FRONT_URL || "").replace(/\/$/, "");
 
     const session = await stripe.checkout.sessions.create({
       line_items: [
         {
           price_data: {
-            currency: 'usd',
-            product_data: {
-              name: 'Unlock your media.',
-            },
-            unit_amount: Math.trunc(amount + feeAmount),
+            currency,
+            product_data: { name: "Unlock your content." },
+            unit_amount: amount + feeAmount,
           },
           quantity: 1,
         },
@@ -43,25 +43,26 @@ const createCheckoutSession = asyncHandler(async (req, res, next) => {
       payment_intent_data: {
         transfer_data: {
           destination: user.stripeAccountId,
-          amount: Math.trunc(amount - feeAmount)
+          amount: amount - feeAmount,
         },
       },
-      mode: 'payment',
+      mode: "payment",
       metadata: {
         mediaId: media._id.toString(),
         userId: media.user.toString(),
+        uuid: uuid,
       },
-      success_url: "https://admez.fun/payment/success?session_id={CHECKOUT_SESSION_ID}",
+      success_url: `${frontUrl}/buy/${uuid}/success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${frontUrl}/buy/${uuid}`,
     });
-
 
     res.status(200).json({
       status: 200,
       success: true,
-      data: { url: session.url }
+      data: { url: session.url },
     });
-  }
-  catch (error) {
+  } catch (error) {
+    console.error("[Checkout] createCheckoutSession error:", error.message);
     return next(new CustomError("Error creating checkout session", 500));
   }
 });

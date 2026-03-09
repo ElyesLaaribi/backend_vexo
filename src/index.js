@@ -13,24 +13,26 @@ const mongoSanitize = require('express-mongo-sanitize');
 const xss = require('xss-clean')
 require("dotenv").config()
 const Media = require("./models/media.model.js");
-const Payout = require("./models/payout.model.js");
-
-
-
-
 const stripe_webhook = require('./webhooks/stripe/stripeWebhooks.js');
 
 app.post('/stripe_webhook', express.raw({ type: 'application/json' }), stripe_webhook);
 
 
 
-app.use(cors({
-  origin: [
-    "https://www.admez.fun",
-    "http://localhost:5173"
-  ],
-  methods: ["GET", "POST", "PATCH"],
-}));
+// Build allowed origins from FRONT_URL env var (auto-adds www / non-www)
+const allowedOrigins = ["http://localhost:5173", "http://localhost:5174"];
+if (process.env.FRONT_URL) {
+  allowedOrigins.push(process.env.FRONT_URL.replace(/\/$/, ""));
+  try {
+    const _u = new URL(process.env.FRONT_URL);
+    if (_u.hostname.startsWith("www.")) {
+      allowedOrigins.push(_u.protocol + "//" + _u.hostname.slice(4));
+    } else {
+      allowedOrigins.push(_u.protocol + "//www." + _u.hostname);
+    }
+  } catch (_) {}
+}
+app.use(cors({ origin: allowedOrigins, methods: ["GET", "POST", "PATCH"] }));
 
 
 
@@ -81,11 +83,6 @@ app.use((req, res, next) => {
 
 
 
-
-
-
-
-
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 200,
@@ -93,23 +90,6 @@ const limiter = rateLimit({
 });
 
 app.use(limiter);
-
-
-
-
-
-
-const didit_webhook = require('./webhooks/didit/diditWebhooks.js');
-app.post('/didit_webhook_admez', bodyParser.json({
-  verify: (req, res, buf, encoding) => {
-    if (buf && buf.length) {
-      // Store the raw body in the request object
-      req.rawBody = buf.toString(encoding || "utf8");
-    }
-  },
-}), didit_webhook);
-
-
 
 
 app.use(bodyParser.json())
@@ -138,13 +118,9 @@ const { createMediaLink, createFileLink, getLinkPage } = require("./controllers/
 const { readyMediaDataLink, readyFileDataLink } = require("./utils/linksUtils/getReadyForLink.js");
 const checkBan = require("./utils/isBanned/isBanned.js")
 const hasPhoneNumber = require("./utils/phone/hasPhoneNumber.js")
-const isVerifiedMiddleWare = require("./verification/diditVerif/isVerifiedKyc.js")
-const isKycDone = require('./controllers/checkKyc.controller.js')
 // USED ...
-app.post('/media/createLink', authorize, checkBan, isVerifiedMiddleWare, hasPhoneNumber, readyMediaDataLink, upload.array("files"), createMediaLink);
-app.post('/file/createLink', authorize, checkBan, isVerifiedMiddleWare, hasPhoneNumber, readyFileDataLink, upload.array("files"), createFileLink);
-
-app.get('/isKycDone', authorize, isVerifiedMiddleWare, isKycDone)
+app.post('/media/createLink', authorize, checkBan, hasPhoneNumber, readyMediaDataLink, upload.array("files"), createMediaLink);
+app.post('/file/createLink', authorize, checkBan, hasPhoneNumber, readyFileDataLink, upload.array("files"), createFileLink);
 
 app.get('/media/v1/:id', getLinkPage);
 
@@ -169,12 +145,10 @@ app.use("/payout", payoutRoute);
 app.use("/mediaData", mediaRoute);
 app.use("/bank", bankRoute);
 app.use("/KYC", verif);
-
-
 const isBankVerified = require("./utils/bankingUtils/bankStatusSettings.js")
-const isVerifiedSetting = require("./verification/diditVerif/isVerifiedKycSettings.js")
+const attachVerificationStatus = require("./verification/manualVerification/attachVerificationStatus.js")
 const settings = require("./controllers/settings.controller.js")
-app.get("/settingsInfo", authorize, isBankVerified, hasPhoneNumber, isVerifiedSetting, settings)
+app.get("/settingsInfo", authorize, isBankVerified, hasPhoneNumber, attachVerificationStatus, settings)
 
 
 

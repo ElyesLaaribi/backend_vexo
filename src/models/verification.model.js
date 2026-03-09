@@ -1,29 +1,51 @@
-const mongoose = require("mongoose")
- 
+const mongoose = require("mongoose");
 
-const VerificationSchema = new mongoose.Schema({
-    sessionId : {
-      type : String ,
-      required : true ,
-      unique : true ,
+const verificationSchema = new mongoose.Schema(
+  {
+    user: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      required: true,
+      unique: true,
+      index: true,
     },
-    date : {
-      type : Date , 
-      required : true , 
-      default : Date.now(),
+    documentType: {
+      type: String,
+      enum: ["passport", "id", "driving_license"],
+      required: true,
     },
-    status : {
-      type : String ,
-      required : true ,
+    documentImageUrl: {
+      type: String,
+      required: true,
     },
-    user : {
-      type : String ,
-      required : true ,
-    }
-    
-})
+    selfieImageUrl: {
+      type: String,
+      required: true,
+    },
+    status: {
+      type: String,
+      enum: ["unverified", "pending_verification", "verified", "rejected"],
+      default: "pending_verification",
+      index: true,
+    },
+    reviewedAt: {
+      type: Date,
+      default: null,
+    },
+    reviewedBy: {
+      type: String,
+      default: null,
+    },
+    rejectionReason: {
+      type: String,
+      default: null,
+    },
+  },
+  {
+    timestamps: { createdAt: true, updatedAt: true },
+  },
+);
 
+const Verification = mongoose.model("verification", verificationSchema);
 
-const Verification = mongoose.model('verification', VerificationSchema);
-
-module.exports = Verification 
+module.exports = Verification;

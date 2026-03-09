@@ -11,7 +11,7 @@ const settings = asyncHandler (async (req ,res , next)=> {
           kycOnboardRequired : req.kycOnboardRequired,
           bankSetupRequired : req.bankSetupRequired ,
           hasPhoneNumber : req.hasPhoneNumber  ,
-          status : req.status  ,
+          verificationStatus : req.verificationStatus  ,
           country : req.user.country
         }
       )

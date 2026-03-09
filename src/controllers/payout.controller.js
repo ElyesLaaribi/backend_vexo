@@ -2,6 +2,7 @@ const asyncHandler = require("../utils/errors/asyncHandler.js")
 const CustomError = require("../utils/errors/CustomError.js")
 const Stripe = require('stripe');
 const Payout = require('../models/payout.model.js')
+const Verification = require('../models/verification.model.js')
 const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
 const ban = require("../utils/isBanned/ban.js")
 
@@ -64,6 +65,9 @@ const requestPayout = asyncHandler(async (req , res , next)=> {
 const getAllPayouts = asyncHandler(async (req, res, next) => {
   try {
     const stripeId = req.user.stripeAccountId;
+    const verification = await Verification.findOne({ user: req.user._id }).select(
+      "status",
+    );
  
     const balance = await stripe.balance.retrieve({
       stripeAccount: stripeId,
@@ -90,6 +94,8 @@ const getAllPayouts = asyncHandler(async (req, res, next) => {
         available: availableBalance.amount  ,
         pending: pendingBalance.amount  ,
       },
+      verificationStatus: verification?.status || "unverified",
+      canWithdraw: verification?.status === "verified",
       payouts,
     });
   } catch (error) { 

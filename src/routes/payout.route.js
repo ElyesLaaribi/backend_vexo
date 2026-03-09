@@ -3,11 +3,11 @@ const {requestPayout , getAllPayouts , getAllPayoutsForScreen } = require("../co
 const router = express.Router() 
 const authorize = require("../utils/authorization.js")
 const checkBankStatus = require("../utils/bankingUtils/bankStatus.js")
-const isVerifiedMiddleWare = require("../verification/diditVerif/isVerifiedKyc.js")
+const requireVerifiedForPayout = require("../verification/manualVerification/requireVerifiedForPayout.js")
 const checkBan = require("../utils/isBanned/isBanned.js")
 
 // USED ...
-router.post("/r-payout" , authorize , checkBan ,checkBankStatus , isVerifiedMiddleWare   , requestPayout)
+router.post("/r-payout" , authorize , checkBan ,checkBankStatus , requireVerifiedForPayout   , requestPayout)
 
 // USED ...
 router.get("/payouts" , authorize  ,  getAllPayouts)
