@@ -78,10 +78,15 @@ const getLinkPage = asyncHandler ( async (req , res , next )=> {
         }
       )
 
+    const linkData = link.toObject();
+    if (linkData?.priceSet !== undefined && linkData?.priceSet !== null) {
+      linkData.priceSet = parseFloat(linkData.priceSet.toString());
+    }
+
     res.status(200).json({
       status :200 ,
       success : true , 
-      data : link
+      data : linkData
     })
 
 })
