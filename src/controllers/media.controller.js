@@ -6,17 +6,33 @@ const processFile = require("../utils/linksUtils/thumbnailGenerator.js");
 const User = require("../models/user.model.js")
 const  sendNotification = require("../webhooks/stripe/wh_controllers/notification.js")
 
-const { S3Client , PutObjectCommand} = require("@aws-sdk/client-s3");
+const { S3Client , PutObjectCommand, GetObjectCommand } = require("@aws-sdk/client-s3");
 const { Upload } = require('@aws-sdk/lib-storage');
+const { getSignedUrl } = require('@aws-sdk/s3-request-presigner');
 const { uploadToCloud , deleteFolderFromCloud } =  require("../utils/aws/upload.js")
-const s3 = new S3Client({ 
+
+const s3Config = {
   credentials : {
     accessKeyId : process.env.AWS_ACCESS_KEY_ID,
-    secretAccessKey : process.env.AWS_SECRET_ACCESS_KEY ,
-  }, 
-  region :  process.env.AWS_REGION , 
+    secretAccessKey : process.env.AWS_SECRET_ACCESS_KEY,
+  },
+  region : process.env.AWS_REGION,
+}
+// If using Backblaze B2 or another S3-compatible provider, set AWS_ENDPOINT
+if (process.env.AWS_ENDPOINT) {
+  s3Config.endpoint = process.env.AWS_ENDPOINT
+  s3Config.forcePathStyle = true
+}
+const s3 = new S3Client(s3Config)
 
-})
+// Generate a 7-day pre-signed URL for private bucket objects
+const getSignedFileUrl = async (key) => {
+  const command = new GetObjectCommand({
+    Bucket: process.env.AWS_BUCKET_NAME,
+    Key: key,
+  })
+  return getSignedUrl(s3, command, { expiresIn: 60 * 60 * 24 * 7 }) // 7 days
+}
 
 
  
