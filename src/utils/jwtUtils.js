@@ -24,7 +24,7 @@ const verifyAccessToken = (token , next) => {
 
 const verifyRefreshToken = (token , next) => {
   try{
-    return jwt.verify(token , process.env.JWT_REFRESH_SECRET)
+    return jwt.verify(token , process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET)
   }
   catch(e) {  
     return next(new CustomError('refresh token! expired #needNewRefreshToken' , 599))
