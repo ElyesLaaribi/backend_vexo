@@ -6,11 +6,11 @@ const asyncHandler = require('./errors/asyncHandler');
 dotenv.config();
 
 const generateAccesToken = (userId)=> { 
-  return jwt.sign({id : userId} , process.env.JWT_SECRET , {expiresIn : process.env.JWT_ACCESS_EXPIRATION})
+  return jwt.sign({id : userId} , process.env.JWT_SECRET , {expiresIn : process.env.JWT_ACCESS_EXPIRATION || '15m'})
 }
 
 const generateRefreshToken = (userId) => { 
-  return jwt.sign({id : userId} , process.env.JWT_REFRESH_SECRET )
+  return jwt.sign({id : userId} , process.env.JWT_REFRESH_SECRET || process.env.JWT_SECRET , {expiresIn : '30d'})
 }
 
 const verifyAccessToken = (token , next) => {
