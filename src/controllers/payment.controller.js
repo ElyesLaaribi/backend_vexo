@@ -25,9 +25,24 @@ const createCheckoutSession = asyncHandler(async (req, res, next) => {
     // Use the creator's actual currency (falls back to usd if unset)
     const currency = (user.currency || "usd").toLowerCase();
     const amount = Math.round(media.priceSet * 100);
-    const feeAmount = Math.trunc((amount * 10) / 100);
+
+    const platformCountry = (process.env.STRIPE_PLATFORM_COUNTRY || "US").toUpperCase();
+    const creatorCountry = (user.country || "").toUpperCase();
+    const crossBorder =
+      Boolean(creatorCountry) && creatorCountry !== platformCountry;
+
+    const platformFeesSupported = !crossBorder;
+    const feeAmount = platformFeesSupported ? Math.trunc((amount * 10) / 100) : 0;
 
     const frontUrl = (process.env.FRONT_URL || "").replace(/\/$/, "");
+
+    const transferData = {
+      destination: user.stripeAccountId,
+    };
+
+    if (platformFeesSupported) {
+      transferData.amount = amount - feeAmount;
+    }
 
     const session = await stripe.checkout.sessions.create({
       line_items: [
@@ -41,16 +56,15 @@ const createCheckoutSession = asyncHandler(async (req, res, next) => {
         },
       ],
       payment_intent_data: {
-        transfer_data: {
-          destination: user.stripeAccountId,
-          amount: amount - feeAmount,
-        },
+        transfer_data: transferData,
       },
       mode: "payment",
       metadata: {
         mediaId: media._id.toString(),
         userId: media.user.toString(),
         uuid: uuid,
+        platformFeeApplied: platformFeesSupported ? "true" : "false",
+        platformFeeAmount: feeAmount.toString(),
       },
       success_url: `${frontUrl}/buy/${uuid}/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${frontUrl}/buy/${uuid}`,
