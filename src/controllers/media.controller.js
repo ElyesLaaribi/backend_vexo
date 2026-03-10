@@ -83,6 +83,15 @@ const getLinkPage = asyncHandler ( async (req , res , next )=> {
       linkData.priceSet = parseFloat(linkData.priceSet.toString());
     }
 
+    // Convert thumbnail filenames to pre-signed URLs
+    if (linkData.thumbnailsNames && linkData.thumbnailsNames.length > 0 && linkData.ThumbnailsPath) {
+      linkData.thumbnailsUrl = await Promise.all(
+        linkData.thumbnailsNames.map(async (name) => {
+          return await getSignedFileUrl(`${linkData.ThumbnailsPath}/${name}`)
+        })
+      )
+    }
+
     res.status(200).json({
       status :200 ,
       success : true , 
