@@ -9,13 +9,18 @@ const {
   deleteFolderFromCloud,
 } = require("../utils/aws/upload.js");
 
-const s3 = new S3Client({
+const s3Config = {
   credentials: {
     accessKeyId: process.env.AWS_ACCESS_KEY_ID,
     secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY,
   },
   region: process.env.AWS_REGION,
-});
+};
+if (process.env.AWS_ENDPOINT) {
+  s3Config.endpoint = process.env.AWS_ENDPOINT;
+  s3Config.forcePathStyle = true;
+}
+const s3 = new S3Client(s3Config);
 
 const allowedStatuses = new Set([
   "unverified",
