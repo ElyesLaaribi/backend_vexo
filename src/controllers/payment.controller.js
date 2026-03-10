@@ -22,26 +22,38 @@ const createCheckoutSession = asyncHandler(async (req, res, next) => {
       return next(new CustomError("Creator Stripe account not found!", 400));
     }
 
-    // Use the creator's actual currency (falls back to usd if unset)
     const currency = (user.currency || "usd").toLowerCase();
     const amount = Math.round(media.priceSet * 100);
 
     const platformCountry = (process.env.STRIPE_PLATFORM_COUNTRY || "US").toUpperCase();
     const creatorCountry = (user.country || "").toUpperCase();
+    const unsupportedCountries = (process.env.STRIPE_DESTINATION_UNSUPPORTED || "TH")
+      .split(",")
+      .map((c) => c.trim().toUpperCase())
+      .filter(Boolean);
+    const unsupportedSet = new Set(unsupportedCountries);
+
     const crossBorder =
       Boolean(creatorCountry) && creatorCountry !== platformCountry;
+    const destinationSupported = !unsupportedSet.has(creatorCountry);
 
-    const platformFeesSupported = !crossBorder;
+    const manualTransferRequired = !destinationSupported;
+    const platformFeesSupported = !manualTransferRequired && !crossBorder;
     const feeAmount = platformFeesSupported ? Math.trunc((amount * 10) / 100) : 0;
+    const netSellerAmount = amount - feeAmount;
 
     const frontUrl = (process.env.FRONT_URL || "").replace(/\/$/, "");
+    const transferGroup = `media_${media._id}_${uuid}`;
 
-    const transferData = {
-      destination: user.stripeAccountId,
+    const paymentIntentData = {
+      transfer_group: transferGroup,
     };
 
-    if (platformFeesSupported) {
-      transferData.amount = amount - feeAmount;
+    if (!manualTransferRequired) {
+      paymentIntentData.transfer_data = {
+        destination: user.stripeAccountId,
+        amount: netSellerAmount,
+      };
     }
 
     const session = await stripe.checkout.sessions.create({
@@ -55,9 +67,7 @@ const createCheckoutSession = asyncHandler(async (req, res, next) => {
           quantity: 1,
         },
       ],
-      payment_intent_data: {
-        transfer_data: transferData,
-      },
+      payment_intent_data: paymentIntentData,
       mode: "payment",
       metadata: {
         mediaId: media._id.toString(),
@@ -65,6 +75,11 @@ const createCheckoutSession = asyncHandler(async (req, res, next) => {
         uuid: uuid,
         platformFeeApplied: platformFeesSupported ? "true" : "false",
         platformFeeAmount: feeAmount.toString(),
+        manualTransferRequired: manualTransferRequired ? "true" : "false",
+        manualTransferAmount: netSellerAmount.toString(),
+        sellerStripeAccountId: user.stripeAccountId,
+        transferGroup,
+        creatorCountry,
       },
       success_url: `${frontUrl}/buy/${uuid}/success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${frontUrl}/buy/${uuid}`,

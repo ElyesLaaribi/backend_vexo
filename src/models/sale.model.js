@@ -27,6 +27,15 @@ const salesSchema = new mongoose.Schema({
     required: true,
     unique: true,
   },
+  stripeTransferId: {
+    type: String,
+    default: null,
+  },
+  transferStatus: {
+    type: String,
+    enum: ["pending", "succeeded", "failed", null],
+    default: null,
+  },
 });
 
 // Enforce unique index at schema level — prevents duplicate sales on retry

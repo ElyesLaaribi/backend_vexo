@@ -3,6 +3,59 @@ const Media = require("../../../models/media.model");
 const Sale = require("../../../models/sale.model");
 const FCM = require("../../../models/fcmToken.model");
 const sendNotification = require("./notification");
+const Stripe = require("stripe");
+const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
+
+const attemptManualTransfer = async (session, saleDoc) => {
+  const manualTransferAmount = parseInt(session?.metadata?.manualTransferAmount || "0", 10);
+  const sellerStripeAccountId = session?.metadata?.sellerStripeAccountId;
+  const transferGroup = session?.metadata?.transferGroup;
+
+  if (!manualTransferAmount || manualTransferAmount <= 0) {
+    console.warn(`[Checkout] manual transfer skipped: invalid amount for session ${session.id}`);
+    return;
+  }
+
+  if (!session?.currency) {
+    console.warn(`[Checkout] manual transfer skipped: missing currency for session ${session.id}`);
+    return;
+  }
+
+  if (!sellerStripeAccountId) {
+    console.warn(`[Checkout] manual transfer skipped: missing destination account for session ${session.id}`);
+    return;
+  }
+
+  try {
+    const transfer = await stripe.transfers.create({
+      amount: manualTransferAmount,
+      currency: session.currency,
+      destination: sellerStripeAccountId,
+      transfer_group: transferGroup,
+      metadata: {
+        mediaId: session.metadata?.mediaId || "",
+        sessionId: session.id,
+      },
+    });
+
+    await Sale.findByIdAndUpdate(saleDoc._id, {
+      stripeTransferId: transfer.id,
+      transferStatus: transfer.status || "succeeded",
+    });
+    saleDoc.stripeTransferId = transfer.id;
+    saleDoc.transferStatus = transfer.status || "succeeded";
+    console.log(`[Checkout] manual transfer ${transfer.id} created for sale ${saleDoc._id}`);
+  } catch (error) {
+    console.error(
+      `[Checkout] manual transfer failed for sale ${saleDoc?._id || "unknown"}: ${error.message}`,
+    );
+    await Sale.findByIdAndUpdate(
+      saleDoc._id,
+      { transferStatus: "failed" },
+      { new: false },
+    );
+  }
+};
 
 const updateSales = async (session) => {
   try {
@@ -15,10 +68,9 @@ const updateSales = async (session) => {
     const mediaId = session.metadata.mediaId;
 
     // ── Idempotency check: skip if this session was already processed ──
-    const existingSale = await Sale.findOne({ stripeSessionId: sessionId });
-    if (existingSale) {
-      console.log(`Sale already recorded for session ${sessionId} — skipping (idempotent)`);
-      return;
+    let saleDoc = await Sale.findOne({ stripeSessionId: sessionId });
+    if (saleDoc) {
+      console.log(`Sale already recorded for session ${sessionId} — checking transfer state`);
     }
 
     // ── Derive seller userId from Media, NOT from session.metadata ──
@@ -31,45 +83,50 @@ const updateSales = async (session) => {
     }
     const sellerUserId = media.user.toString();
 
-    // ── MongoDB transaction: Sale creation + Media increment are atomic ──
-    const dbSession = await mongoose.startSession();
-    dbSession.startTransaction();
+    if (!saleDoc) {
+      // ── MongoDB transaction: Sale creation + Media increment are atomic ──
+      const dbSession = await mongoose.startSession();
+      dbSession.startTransaction();
 
-    try {
-      // Create Sale record (unique index on stripeSessionId prevents duplicates)
-      await Sale.create(
-        [
-          {
-            amount: session.amount_total,
-            user: sellerUserId,
-            mediaId: mediaId,
-            status: session.payment_status,
-            stripeSessionId: sessionId,
-          },
-        ],
-        { session: dbSession }
-      );
+      try {
+        let createdSaleDoc;
+        // Create Sale record (unique index on stripeSessionId prevents duplicates)
+        const created = await Sale.create(
+          [
+            {
+              amount: session.amount_total,
+              user: sellerUserId,
+              mediaId: mediaId,
+              status: session.payment_status,
+              stripeSessionId: sessionId,
+            },
+          ],
+          { session: dbSession }
+        );
+        createdSaleDoc = created?.[0];
 
-      // Increment media sales count
-      await Media.findOneAndUpdate(
-        { _id: mediaId },
-        { $inc: { sales: 1 } },
-        { new: true, session: dbSession }
-      );
+        // Increment media sales count
+        await Media.findOneAndUpdate(
+          { _id: mediaId },
+          { $inc: { sales: 1 } },
+          { new: true, session: dbSession }
+        );
 
-      // Both operations succeeded — commit
-      await dbSession.commitTransaction();
-    } catch (e) {
-      await dbSession.abortTransaction();
+        // Both operations succeeded — commit
+        await dbSession.commitTransaction();
+        saleDoc = createdSaleDoc;
+      } catch (e) {
+        await dbSession.abortTransaction();
 
-      if (e.code === 11000) {
-        // Duplicate key — another concurrent request already created this Sale
-        console.log(`Duplicate sale prevented for session ${sessionId}`);
-        return;
+        if (e.code === 11000) {
+          console.log(`Duplicate sale prevented for session ${sessionId}`);
+          saleDoc = await Sale.findOne({ stripeSessionId: sessionId });
+        } else {
+          throw e;
+        }
+      } finally {
+        dbSession.endSession();
       }
-      throw e;
-    } finally {
-      dbSession.endSession();
     }
 
     // ── Send push notification to seller (outside transaction — non-critical) ──
@@ -89,6 +146,12 @@ const updateSales = async (session) => {
       console.log(`Media ${mediaId} sale processed successfully`);
     } catch (e) {
       console.log(`Media ${mediaId} sale processed but notification failed`);
+    }
+
+    const manualTransferRequired =
+      session?.metadata?.manualTransferRequired === "true";
+    if (manualTransferRequired && saleDoc && !saleDoc.stripeTransferId) {
+      await attemptManualTransfer(session, saleDoc);
     }
   } catch (e) {
     console.error(`Failed to process sale for session:`, e.message);
