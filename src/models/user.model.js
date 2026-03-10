@@ -66,6 +66,12 @@ const userSchema = new mongoose.Schema({
    passwordResetToken: String , 
    passwordResetTokenExpires : Date,
 
+  // Email verification
+  emailVerified: { type: Boolean, default: false },
+  emailOtp: String,           // bcrypt-hashed 6-digit code
+  emailOtpExpires: Date,      // 15 min window
+  emailOtpSentAt: Date,       // for 60-s resend rate-limit
+
 });
 
 
