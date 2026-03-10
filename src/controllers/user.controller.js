@@ -46,17 +46,16 @@ const register = asyncHandler(async (req, res, next) => {
     })
   }
 
-  try {
-    await sendOtpEmail(email, otp)
-  } catch (e) {
-    console.error("[register] Failed to send OTP email:", e.message)
-    return next(new CustomError("Failed to send verification email. Try again.", 500))
-  }
-
+  // Respond immediately — don't block on email sending
   res.status(200).json({
     status: 200,
     success: true,
     message: "Verification code sent to your email.",
+  })
+
+  // Send email in background (fire-and-forget)
+  sendOtpEmail(email, otp).catch(e => {
+    console.error("[register] Failed to send OTP email:", e.message)
   })
 })
 
