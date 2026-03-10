@@ -5,6 +5,7 @@ const Media = require("../models/media.model.js")
 const User = require("../models/user.model.js")
 const Sale = require("../models/sale.model.js")
 const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
+const updateSales = require("../webhooks/stripe/wh_controllers/markSale.js");
 
 
 
@@ -117,7 +118,15 @@ const successPaymentUrl = asyncHandler(async (req, res, next) => {
   }
 
   // ── SECURITY: Verify Sale record exists for this session (proves webhook processed it) ──
-  const saleExists = await Sale.findOne({ stripeSessionId: session_id });
+  let saleExists = await Sale.findOne({ stripeSessionId: session_id });
+  if (!saleExists) {
+    try {
+      await updateSales(session);
+      saleExists = await Sale.findOne({ stripeSessionId: session_id });
+    } catch (err) {
+      console.error("[Checkout] sale self-heal failed:", err.message);
+    }
+  }
   if (!saleExists) {
     return next(new CustomError('Payment verification pending — please wait a moment and try again', 403))
   }
