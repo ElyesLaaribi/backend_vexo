@@ -208,9 +208,16 @@ const createMediaLink = asyncHandler(async (req, res, next) => {
       return next(new CustomError("Failed to create media record", 500));
     }
 
-    const firstThumbnailPresigned = thumbnailsCreated && mediaCreated.thumbnailsNames?.length > 0 
-      ? await getSignedFileUrl(`${ThumbnailsPath}/${mediaCreated.thumbnailsNames[0]}`) 
-      : null;
+    let thumbnailsPresigned = [];
+    if (thumbnailsCreated && mediaCreated.thumbnailsNames?.length > 0 && ThumbnailsPath) {
+      thumbnailsPresigned = await Promise.all(
+        mediaCreated.thumbnailsNames.map(async (name) => {
+          return await getSignedFileUrl(`${ThumbnailsPath}/${name}`)
+        })
+      )
+    }
+
+    const firstThumbnailPresigned = thumbnailsPresigned[0] || mediaCreated.thumbnailsNames?.[0] || null;
 
     res.status(200).json({
       status: 200,
@@ -219,7 +226,8 @@ const createMediaLink = asyncHandler(async (req, res, next) => {
       success: true,
       url: fullUrl,
       ThumbnailPath : mediaCreated.ThumbnailsPath,
-      firstThumbnail: firstThumbnailPresigned || mediaCreated.thumbnailsNames[0], // Pre-signed root level access for Flutter
+      thumbnailsUrl: thumbnailsPresigned,
+      firstThumbnail: firstThumbnailPresigned, // Pre-signed root level access for Flutter
       date: mediaCreated.createdAt, // Also including date at root level
       dataType: mediaCreated.DataType,// Also including DataType at root level
       price : mediaCreated.priceSet,
