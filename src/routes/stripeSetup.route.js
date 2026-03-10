@@ -1,5 +1,5 @@
 const express = require ("express") 
-const { setupStripeConnect , setupStripeBanking  } = require("../controllers/stripeSetup.controller.js")
+const { setupStripeConnect , setupStripeBanking, createStripeAccountLink  } = require("../controllers/stripeSetup.controller.js")
 const router = express.Router() 
 const authorize = require("../utils/authorization.js") 
 
@@ -10,6 +10,8 @@ router.post("/connect" , authorize   , setupStripeConnect )
 
 // USED ...
 router.post("/banking" , authorize  , setupStripeBanking )
+
+router.post("/account-link", authorize, createStripeAccountLink)
  
 
 module.exports = router

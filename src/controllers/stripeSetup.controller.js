@@ -8,6 +8,14 @@ const { request } = require("https")
 
 const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
 
+const getReturnBaseUrl = () => {
+  const raw =
+    process.env.STRIPE_ONBOARD_RETURN_URL ||
+    process.env.FRONT_URL ||
+    "https://lumio-link-shop.vercel.app";
+  return raw.replace(/\/$/, "");
+};
+
 const setupStripeConnect = asyncHandler(async (req, res, next) => {
   const {countryCode, currency ,street ,postal_code ,city ,day, month, year,first_name ,last_name} = req.body
 
@@ -252,7 +260,117 @@ const setupStripeBanking = asyncHandler(async (req, res, next) => {
 
 
 
- 
+const createStripeAccountLink = asyncHandler(async (req, res, next) => {
+  try {
+    const stripeAccountId = req.user?.stripeAccountId;
+    if (!stripeAccountId) {
+      return next(new CustomError("Stripe account has not been created yet", 400));
+    }
 
+    const persistStripeStatus = async (status) => {
+      if (!status || req.user?.StripeAccountStatus === status) return;
+      await User.findOneAndUpdate(
+        { _id: req.user._id },
+        { StripeAccountStatus: status },
+        { new: false },
+      );
+      req.user.StripeAccountStatus = status;
+    };
 
-module.exports = {setupStripeConnect , setupStripeBanking }
+    const resolveStripeStatus = (capabilities = {}, requirements = {}) => {
+      const transfersActive = capabilities.transfers === "active";
+      const cardPaymentsActive = capabilities.card_payments === "active";
+      const hasDue =
+        (requirements.currently_due || []).length > 0 ||
+        (requirements.past_due || []).length > 0;
+
+      if (transfersActive && cardPaymentsActive && !hasDue) {
+        return "verified";
+      }
+      if (hasDue) {
+        return "pending";
+      }
+      return "pending";
+    };
+
+    let account;
+    try {
+      account = await stripe.accounts.retrieve(stripeAccountId);
+    } catch (error) {
+      console.error("[Stripe] retrieve account error:", error.message);
+      return next(new CustomError("Failed to load Stripe account", 400));
+    }
+
+    const capabilities = account.capabilities || {};
+    const requirements = account.requirements || {};
+    const currentlyDue = requirements.currently_due || [];
+    const pastDue = requirements.past_due || [];
+    const transfersActive = capabilities.transfers === "active";
+    const cardPaymentsActive = capabilities.card_payments === "active";
+    const hasDueRequirements = currentlyDue.length > 0 || pastDue.length > 0;
+    const needsOnboarding =
+      !transfersActive || !cardPaymentsActive || hasDueRequirements;
+
+    const statusFromStripe = resolveStripeStatus(capabilities, requirements);
+    await persistStripeStatus(statusFromStripe);
+
+    if (!needsOnboarding && !req.body?.force) {
+      return res.status(200).json({
+        status: 200,
+        success: true,
+        data: {
+          alreadyOnboarded: true,
+          stripeAccountStatus: statusFromStripe,
+          requirements: {
+            currentlyDue,
+            pastDue,
+            disabledReason: requirements.disabled_reason || null,
+          },
+          capabilities,
+        },
+      });
+    }
+
+    const baseUrl = getReturnBaseUrl();
+    const refreshUrl = `${baseUrl}/stripe/onboarding/refresh`;
+    const returnUrl = `${baseUrl}/stripe/onboarding/return`;
+
+    const linkType =
+      req.body?.link_type === "account_update"
+        ? "account_update"
+        : "account_onboarding";
+
+    const accountLink = await stripe.accountLinks.create({
+      account: stripeAccountId,
+      type: linkType,
+      refresh_url: refreshUrl,
+      return_url: returnUrl,
+    });
+
+    if (statusFromStripe !== "verified") {
+      await persistStripeStatus("pending");
+    }
+
+    res.status(200).json({
+      status: 200,
+      success: true,
+      data: {
+        url: accountLink.url,
+        expiresAt: accountLink.expires_at,
+        alreadyOnboarded: false,
+        stripeAccountStatus: req.user.StripeAccountStatus,
+        requirements: {
+          currentlyDue,
+          pastDue,
+          disabledReason: requirements.disabled_reason || null,
+        },
+        capabilities,
+      },
+    });
+  } catch (error) {
+    console.error("[Stripe] account link error:", error.message);
+    return next(new CustomError("Failed to start Stripe onboarding", 500));
+  }
+});
+
+module.exports = {setupStripeConnect , setupStripeBanking, createStripeAccountLink }
