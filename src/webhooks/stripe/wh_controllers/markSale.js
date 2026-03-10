@@ -10,6 +10,24 @@ const attemptManualTransfer = async (session, saleDoc) => {
   const manualTransferAmount = parseInt(session?.metadata?.manualTransferAmount || "0", 10);
   const sellerStripeAccountId = session?.metadata?.sellerStripeAccountId;
   const transferGroup = session?.metadata?.transferGroup;
+  const creatorCountry = (session?.metadata?.creatorCountry || "").toUpperCase();
+
+  // Countries where Stripe transfers are not supported — mark for manual payout
+  const unsupportedCountries = (process.env.STRIPE_DESTINATION_UNSUPPORTED || "TH")
+    .split(",")
+    .map((c) => c.trim().toUpperCase())
+    .filter(Boolean);
+
+  if (unsupportedCountries.includes(creatorCountry)) {
+    console.log(
+      `[Checkout] transfer skipped for sale ${saleDoc._id}: creator country ${creatorCountry} requires manual payout`
+    );
+    await Sale.findByIdAndUpdate(saleDoc._id, {
+      transferStatus: "manual_payout_required",
+      manualPayoutAmount: manualTransferAmount,
+    });
+    return;
+  }
 
   if (!manualTransferAmount || manualTransferAmount <= 0) {
     console.warn(`[Checkout] manual transfer skipped: invalid amount for session ${session.id}`);
