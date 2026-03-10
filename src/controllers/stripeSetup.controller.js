@@ -8,6 +8,20 @@ const { request } = require("https")
 
 const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
 
+const platformCountry = (process.env.STRIPE_PLATFORM_COUNTRY || "US").toUpperCase();
+const unsupportedDestinationCountries = new Set(
+  (process.env.STRIPE_DESTINATION_UNSUPPORTED || "TH")
+    .split(",")
+    .map((c) => c.trim().toUpperCase())
+    .filter(Boolean),
+);
+
+const requiresRecipientAgreement = (countryCode = "") => {
+  const normalized = (countryCode || "").toUpperCase();
+  if (!normalized) return false;
+  return unsupportedDestinationCountries.has(normalized);
+};
+
 const getReturnBaseUrl = () => {
   const raw =
     process.env.STRIPE_ONBOARD_RETURN_URL ||
@@ -37,18 +51,19 @@ const setupStripeConnect = asyncHandler(async (req, res, next) => {
     });
     if (userCheck.stripeAccountId != null) return next(new CustomError("account Already set Up !" , 400))
     
+    const accountCountry = (countryCode || "").toUpperCase();
+    const recipientAgreementRequired = requiresRecipientAgreement(accountCountry);
+    const serviceAgreement = recipientAgreementRequired ? "recipient" : "full";
+
     const account = await stripe.accounts.create({
       type: 'custom',
       email: user.email,
       business_type: "individual",
-      country: countryCode.toUpperCase(),
+      country: accountCountry,
       tos_acceptance: {
         date: Math.floor(Date.now() / 1000),
         ip: ip,
-        service_agreement: 
-        //countryCode.toLowerCase() == "us" || countryCode.toLowerCase() == "br"  ?
-          "full"
-          //"recipient",
+        service_agreement: serviceAgreement,
       },
       settings: {
       payouts: {
@@ -299,6 +314,39 @@ const createStripeAccountLink = asyncHandler(async (req, res, next) => {
     } catch (error) {
       console.error("[Stripe] retrieve account error:", error.message);
       return next(new CustomError("Failed to load Stripe account", 400));
+    }
+
+    const creatorCountry =
+      (req.user?.country ||
+        account?.individual?.address?.country ||
+        account?.business_profile?.support_address?.country ||
+        "").toUpperCase();
+    const recipientAgreementRequired =
+      requiresRecipientAgreement(creatorCountry);
+
+    if (
+      recipientAgreementRequired &&
+      account?.tos_acceptance?.service_agreement !== "recipient"
+    ) {
+      try {
+        const ip = getClientAddress(req);
+        await stripe.accounts.update(stripeAccountId, {
+          tos_acceptance: {
+            date: Math.floor(Date.now() / 1000),
+            ip,
+            service_agreement: "recipient",
+          },
+        });
+        account = await stripe.accounts.retrieve(stripeAccountId);
+        console.log(
+          `[Stripe] Updated service agreement to recipient for ${stripeAccountId}`,
+        );
+      } catch (upgradeError) {
+        console.error(
+          "[Stripe] Failed to update service agreement:",
+          upgradeError.message,
+        );
+      }
     }
 
     const capabilities = account.capabilities || {};
