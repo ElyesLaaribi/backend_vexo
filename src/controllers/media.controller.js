@@ -208,14 +208,18 @@ const createMediaLink = asyncHandler(async (req, res, next) => {
       return next(new CustomError("Failed to create media record", 500));
     }
 
+    const firstThumbnailPresigned = thumbnailsCreated && mediaCreated.thumbnailsNames?.length > 0 
+      ? await getSignedFileUrl(`${ThumbnailsPath}/${mediaCreated.thumbnailsNames[0]}`) 
+      : null;
+
     res.status(200).json({
       status: 200,
       message: 'Media link created successfully',
       media: mediaCreated,
       success: true,
       url: fullUrl,
-      ThumbnailPath : mediaCreated.ThumbnailsPath ,
-      firstThumbnail: mediaCreated.thumbnailsNames[0], // Also including it at root level for easy access
+      ThumbnailPath : mediaCreated.ThumbnailsPath,
+      firstThumbnail: firstThumbnailPresigned || mediaCreated.thumbnailsNames[0], // Pre-signed root level access for Flutter
       date: mediaCreated.createdAt, // Also including date at root level
       dataType: mediaCreated.DataType,// Also including DataType at root level
       price : mediaCreated.priceSet,
@@ -415,10 +419,19 @@ const getMediaDetails = asyncHandler(async (req ,res , next)=> {
  
   if(!media) return next(new CustomError("media doesnt exist!", 400))
  
+  const mediaData = media.toObject();
+  if (mediaData.thumbnailsNames && mediaData.thumbnailsNames.length > 0 && mediaData.ThumbnailsPath) {
+    mediaData.thumbnailsUrl = await Promise.all(
+      mediaData.thumbnailsNames.map(async (name) => {
+        return await getSignedFileUrl(`${mediaData.ThumbnailsPath}/${name}`)
+      })
+    )
+  }
+
   res.status(200).json({
     status : 200 , 
     message : 'success',
-    media : media,
+    media : mediaData,
   })
 
 })
@@ -445,11 +458,24 @@ const getAllUserMedia = asyncHandler(async (req ,res , next)=> {
 
   
 
+      // Convert to plain objects and attach signed URLs 
+      const mediaWithUrls = await Promise.all(media.map(async (m) => {
+        const mData = m.toObject();
+        if (mData.thumbnailsNames && mData.thumbnailsNames.length > 0 && mData.ThumbnailsPath) {
+          mData.thumbnailsUrl = await Promise.all(
+            mData.thumbnailsNames.map(async (name) => {
+              return await getSignedFileUrl(`${mData.ThumbnailsPath}/${name}`)
+            })
+          )
+        }
+        return mData;
+      }));
+
       res.status(200).json({
         status : 200 , 
         message : 'success',
         length : media.length , 
-        media : media,
+        media : mediaWithUrls,
       })
     }
     catch(e) {
